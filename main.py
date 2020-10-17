@@ -164,7 +164,7 @@ def config_checker(config_path):
                 get_updated_config(config_path, **{cmd: args[0]})
                 if cmd in (KEY_AUDIO or KEY_SUBS):
                     input(
-                        "Please manually set to 1st audio track and 1st subtitle track")
+                        "Please manually set to 1st audio track and disable subtitles")
                 # Update the current track
                 set_tracks(config_path, status())
             else:
@@ -199,7 +199,7 @@ def track_tracker(config_path):
 
 
 def set_tracks(config_path, tree):
-    categories = tree.findall(".//category/info[@name='Type']/..")
+    categories = sorted(tree.findall(".//category/info[@name='Type']/.."), key=lambda x: x.attrib['name'])
     audio_tracks = [x.find("info[@name='Language']").text.lower() for x in
                     categories if x.find("info[@name='Type']").text == "Audio"]
     subtitles = [x.find("info[@name='Language']").text.lower() for x in
@@ -208,12 +208,13 @@ def set_tracks(config_path, tree):
     if eng_audio:
         audio = eng_audio[0]
         signs_subs = [i for i, lang in enumerate(subtitles) if "sign" in lang]
-        sub = signs_subs[0] if signs_subs else len(subtitles)
+        sub = signs_subs[0] + 1 if signs_subs else 0
     else:
         # There could be no english track, or there could be only an english track
         # Assume the former, since if there's only an english track there probably isn't subs anyway.
+        audio = 0
         eng_subs = [i for i, lang in enumerate(subtitles) if "eng" in lang]
-        sub = eng_subs[0] if eng_subs else 0
+        sub = eng_subs[0] + 1 if eng_subs else 0
     config = get_updated_config(config_path)
     if KEY_AUDIO in config:
         audio = int(config[KEY_AUDIO])
@@ -222,7 +223,7 @@ def set_tracks(config_path, tree):
     print(f"Setting audio track to {audio} ({audio_tracks[audio]})")
     track('audio-track', audio)
     print(
-        f"Setting subtitle track to {sub} ({subtitles[sub] if sub < len(subtitles) else None})")
+        f"Setting subtitle track to {sub} ({subtitles[sub + 1] if sub > 0 else None})")
     track('subtitle-track', sub)
 
 
@@ -241,6 +242,7 @@ def time_tracker(playlist_path):
         else:
             with open(playlist_path, 'w') as f:
                 json.dump(save, f)
+    time.sleep(5)
 
 try:
     main()
