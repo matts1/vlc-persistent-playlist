@@ -1,15 +1,24 @@
+import functools
 import os
 import shutil
+import time
 
 from qbittorrent import Client
 
-qb = Client('http://localhost:8081')
+def get_client():
+    try:
+        return Client('http://localhost:8081')
+    except BaseException:
+        os.startfile("C:\Program Files\qBittorrent\qbittorrent.exe")
+        time.sleep(2)
+        return Client('http://localhost:8081')
+
 ROOT_DIR = "H:\\unwatched"
 
 
 def get_torrent_dirs():
     paths = []
-    for torrent in sorted(qb.torrents(), key=lambda x: x["added_on"]):
+    for torrent in sorted(get_client().torrents(), key=lambda x: x["added_on"]):
         path = os.path.join(torrent['save_path'], torrent['name'])
         if torrent["progress"] > 0:
             paths.append(path)
