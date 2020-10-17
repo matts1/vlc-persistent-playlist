@@ -3,3 +3,4 @@ python-qbittorrent
 psutil
 SpeechRecognition
 pyaudio
+pony

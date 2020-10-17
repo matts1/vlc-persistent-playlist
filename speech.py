@@ -3,7 +3,9 @@ import re
 import pyaudio
 import speech_recognition as sr
 
-REWRITES = {}
+REWRITES = {
+    "to": "2"
+}
 
 def get_line():
     # obtain audio from the microphone

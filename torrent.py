@@ -1,4 +1,3 @@
-import functools
 import os
 import shutil
 import time
@@ -38,5 +37,5 @@ if __name__ == "__main__":
             for f in files:
                 if os.path.join(root, f) not in torrent_dirs:
                     print("    " + f)
-            if root != ROOT_DIR and input("Delete? (y/n)").lower() ==  "y":
+            if root != ROOT_DIR and (files == [".playlist"] or input("Delete? (y/n)").lower() ==  "y"):
                 shutil.rmtree(root)
