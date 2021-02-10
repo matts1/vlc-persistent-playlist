@@ -125,7 +125,7 @@ class Series(database.db.Entity, database.Table):
         ep = playlist()[1]
         assert ep is not None
         current_episode = Episode[ep]
-        if current_episode != self.current_episode:
+        if self.upto is None or current_episode != self.current_episode:
             for k, v in self.episodes.items():
                 if v == current_episode:
                     self.upto = k
