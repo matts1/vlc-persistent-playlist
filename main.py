@@ -3,14 +3,13 @@ import sys
 import threading
 import time
 import traceback
-from datetime import datetime
 
 from pony.orm import db_session, select, desc
 
 from database import db
 from series import Series
 from speech import get_rewritten_line
-from torrent import select_torrent
+from torrent import get_torrent_dirs
 
 db.generate_mapping(create_tables=True)
 
@@ -32,19 +31,22 @@ def loop_and_sleep(duration, fn, *args, **kwargs):
 @db_session
 def main():
     if len(sys.argv) < 2:
-        [s.delete() for s in Series.select() if not os.path.exists(s.directory)]
-        all_series = list(select(s for s in Series).order_by(lambda: desc(s.last_watched)))
+        [s.delete() for s in Series.select() if not s.is_tag and not os.path.exists(s.directory_or_tag)]
+        all_series = sorted(Series.select(), key=lambda s: s.last_watched, reverse=True)
         series = all_series[0]
-        series.last_watched = datetime.now()
-    elif sys.argv[1] == "--":
-        series = Series.get_or_create(input("Enter the absolute path to the directory: "))
     elif sys.argv[1] == "--torrent":
-        series = Series.get_or_create(select_torrent())
-    else:
-        series = Series.get_or_create(sys.argv[1])
+        all_series = [Series.get_or_create(name, directories) for name, directories in reversed(get_torrent_dirs().items())]
+        all_series = [s for s in all_series if s is not None and (s.completed == 0 or s.completed != s.n_episodes)]
 
-    if not os.path.exists(series.directory):
-        error("Directory doesn't exist:", root_dir)
+        for i, s in reversed(list(enumerate(all_series))):
+            if s.completed > 0:
+                progress = f'({s.completed: >2}/{s.n_episodes: <2})'
+            else:
+                progress = ' ' * 7
+            print(f'{i: <3} {progress} {s.name}')
+
+        series = all_series[int(sys.argv[2] if len(sys.argv) > 2 else input("Enter the torrent number: "))]
+
     series.start()
     threading.Thread(target=series.command_loop, args=(input,)).start()
     threading.Thread(target=series.command_loop, args=(get_rewritten_line,)).start()

@@ -3,8 +3,14 @@ import re
 import pyaudio
 import speech_recognition as sr
 
+WORD_REWRITES = {
+    "to": "2",
+    "set": "seek",
+    "tractor": "chapter"
+}
+
 REWRITES = {
-    "to": "2"
+    "shut up": "chapter"
 }
 
 def get_line():
@@ -27,8 +33,11 @@ def get_line():
 def get_rewritten_line():
     line = get_line()
     if line is not None:
-        line = re.sub("Six(-?[0-9]+)", "seek \\1", line)
-        return " ".join([REWRITES.get(word, word) for word in line.split()])
+        line = re.sub("^(Six|6)(-?[0-9]+)$", "seek \\2", line)
+        for frm, to in REWRITES.items():
+            line = line.replace(frm, to)
+
+        return " ".join([WORD_REWRITES.get(word, word) for word in line.split()])
 
 if __name__ == '__main__':
     while True:

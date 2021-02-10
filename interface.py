@@ -1,3 +1,4 @@
+import itertools
 import os
 import urllib
 
@@ -5,10 +6,12 @@ import psutil
 import requests
 from requests.auth import HTTPBasicAuth
 import xml.etree.ElementTree as ET
+from urllib.parse import urlencode
 
 
 def run(url, **params):
-    url = f'http://localhost:8080/requests/{url}.xml?{"&".join(k + "=" + str(v) for k, v in params.items())}'
+    # urlencode double escapes some characters
+    url = f'http://localhost:8080/requests/{url}.xml?{"&".join(k + "=" + str(v).replace("&", "%26") for k, v in params.items())}'
     response = requests.get(
             url,
             auth=HTTPBasicAuth('', 'pass'))

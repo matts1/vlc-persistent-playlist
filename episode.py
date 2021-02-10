@@ -1,4 +1,6 @@
-from pony.orm import PrimaryKey, Required, Optional, ObjectNotFound
+import re
+
+from pony.orm import PrimaryKey, Required, Optional, ObjectNotFound, Set
 
 import database
 from interface import status
@@ -14,11 +16,13 @@ def while_playing(fn):
 class TrackSet(object):
     def __init__(self, st):
         streams = sorted(
-                st.findall(".//category/info[@name='Type']/.."),
-                key=lambda x: x.attrib['name'])
-        self.tracks = [None] + [x.find("info[@name='Language']").text.lower() for x in
-                        streams if
-                        x.find("info[@name='Type']").text == self.name.title() and x.find("info[@name='Language']") is not None]
+                [x for x in st.findall(".//category/info[@name='Type']/..") if x.find("info[@name='Type']").text == self.name.title()], key=lambda x: x.attrib['name'])
+        def track_name(x):
+            tag = x.find("info[@name='Description']")
+            if tag is None:
+                tag = x.find("info[@name='Language']")
+            return "???" if tag is None else tag.text.lower()
+        self.tracks = [None] + list(map(track_name, streams))
 
     def get_index(self, matcher):
         tracks = [i for i, lang in enumerate(self.tracks[1:]) if matcher(lang)]
@@ -53,9 +57,8 @@ class AudioTrackSet(TrackSet):
 class Episode(database.db.Entity, database.Table):
     fname = PrimaryKey(str)
     upto = Required(int, default=0)
-    # Only populated for the thing currently playing
-    series = Optional("Series")
     last_undo_time = None
+    intro_start = None
 
     @classmethod
     def get_or_create(cls, item, *args, **kwargs):
@@ -75,8 +78,12 @@ class Episode(database.db.Entity, database.Table):
 
     @while_playing
     def seek_command(self, fn, *args, **kwargs):
-        self.last_undo_time = int(status().find('time').text)
+        self.last_undo_time = self.current_time()
         fn(*args, **kwargs)
+
+    @while_playing
+    def current_time(self):
+        return int(status().find('time').text)
 
     @while_playing
     def on_play(self, st):
@@ -87,12 +94,25 @@ class Episode(database.db.Entity, database.Table):
         eng_audio = self.audio_tracks.get_index(lambda lang: "eng" in lang)
         override_audio = self.series.override_audio
         override_subs = self.series.override_subs
-        if override_audio is not None or eng_audio:
+        if override_subs is not None:
+            self.sub_tracks.set_track(override_subs)
+        elif override_audio is not None or eng_audio:
             # If you override the audio, obviously it's to make it english, so assume we found english audio.
-            self.audio_tracks.set_track(eng_audio if override_audio is None else override_audio)
-            self.sub_tracks.set_track(self.sub_tracks.get_index(lambda lang: "sign" in lang) if override_subs is None else override_subs)
+            # self.audio_tracks.set_track(eng_audio if override_audio is None else override_audio)
+            self.sub_tracks.set_track(self.sub_tracks.get_index(lambda lang: "sign" in lang))
         else:
-            # There could be no english track, or there could be only an english track
-            # Assume the former, since if there's only an english track there probably isn't subs anyway.
-            self.audio_tracks.set_track(1)
-            self.subtitle_track.set_track(self.sub_tracks.get_index(lambda lang: "sign" not in lang and "eng" in lang) if override_subs is None else override_subs)
+            # There could be no english track, or there could be only an english track. Assume the latter.
+            eng_track = self.sub_tracks.get_index(
+                lambda lang: "sign" not in lang and "eng" in lang)
+            if not eng_track:
+                eng_track = 1
+            self.sub_tracks.set_track(eng_track)
+
+    @property
+    def inferred_episode(self):
+        stripped = re.sub("((1080|720|540)p)|S[0-9]+E?|\[[A-Z0-9]+\]|v[0-9]+", "", self.fname, flags=re.I)
+        result = re.findall(r"\b[0-9]+\b", stripped)
+        if len(result) != 1:
+            print("Unable to find a single number in", repr(stripped), "got", result)
+            return None
+        return int(result[0])
