@@ -27,12 +27,12 @@ def get_torrent_dirs():
         path = torrent['content_path']
         if torrent["progress"] > 0:
             tag = torrent['category']
-            if tag == 'Shana Project':
+            if tag == 'Shana Project' or not tag:
                 for category in categories:
-                    if category.lower().split(" - ")[0] in torrent['name'].lower().replace("_", " "):
+                    if category.lower().split(" - ")[0] in torrent['name'].lower().replace("_", " ").replace(".", " "):
                         print("Filing under", category, ":", torrent['name'])
                         CLIENT.set_category(torrent['hash'], category)
-                        tag = category
+                        torrent['category'] = tag = category
 
             if tag:
                 paths[tag] = paths.pop(tag, []) + [path]

@@ -1,9 +1,26 @@
+import os
 import re
 
 from pony.orm import PrimaryKey, Required, Optional, ObjectNotFound, Set
 
 import database
 from interface import status
+
+R = lambda x: lambda s: re.sub(x, "", s, flags=re.I)
+
+TRANSFORMATIONS = [
+    os.path.basename,
+    R(r"((1440|1080|720|540)p)"),
+    R(r"[57]\.1"),
+    R(r"[Hx]\.?26[45]"),
+    R(r"S[0-9]+E?"),
+    R(r"\[[A-Z0-9]+\]"),
+    R(r"v[0-9]+"),
+    R(r"20[012][0-9]"),
+    R(r"S?[0-9]+x"),
+    R(r"Chapter [0-9]+"),
+    # lambda f: f.replace(".", " ")
+]
 
 
 def while_playing(fn):
@@ -110,9 +127,10 @@ class Episode(database.db.Entity, database.Table):
 
     @property
     def inferred_episode(self):
-        stripped = re.sub("((1080|720|540)p)|S[0-9]+E?|\[[A-Z0-9]+\]|v[0-9]+", "", self.fname, flags=re.I)
-        result = re.findall(r"\b[0-9]+\b", stripped)
-        if len(result) != 1:
-            print("Unable to find a single number in", repr(stripped), "got", result)
-            return None
+        stages = [self.fname]
+        for t in TRANSFORMATIONS:
+            stages.append(t(stages[-1]))
+        result = re.findall(r"\b[0-9]+\b", stages[-1])
+        stages_fmt = '\n'.join(stages)
+        assert len(result) == 1, f"Unable to find a single number in:\n{stages_fmt}\nGot: {result}"
         return int(result[0])

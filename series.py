@@ -17,8 +17,6 @@ def get_episodes(directory):
     if isinstance(directory, list):
         episodes = [d for single_dir in directory for d in get_episodes(single_dir).values()]
         episodes.sort(key=lambda x: (x.inferred_episode, x.fname))
-        for ep in episodes:
-            assert ep.inferred_episode is not None, ep.fname
         episodes_map = OrderedDict()
         for i, ep in enumerate(episodes):
             expected = episodes[0].inferred_episode + i
