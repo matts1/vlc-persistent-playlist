@@ -18,12 +18,12 @@ ROOT_DIR = "H:\\unwatched"
 CLIENT = get_client()
 TORRENTS = CLIENT.torrents()
 
-def get_torrent_dirs():
-    paths = OrderedDict()
-    torrents = sorted(TORRENTS, key=lambda x: x["added_on"])
+def get_torrents():
+    torrents = OrderedDict()
+    initial_torrents = sorted(TORRENTS, key=lambda x: x["added_on"])
     # Only categories with actual things in them.
-    categories = {torrent['category'] for torrent in torrents if torrent['category']}
-    for torrent in torrents:
+    categories = {torrent['category'] for torrent in initial_torrents if torrent['category']}
+    for torrent in initial_torrents:
         path = torrent['content_path']
         if torrent["progress"] > 0:
             tag = torrent['category']
@@ -35,13 +35,10 @@ def get_torrent_dirs():
                         torrent['category'] = tag = category
 
             if tag:
-                paths[tag] = paths.pop(tag, []) + [path]
+                torrents[tag] = torrents.pop(tag, []) + [torrent]
             else:
-                paths[torrent['name']] = path
-    return paths
-
-def get_directories(tag):
-    return [torrent['content_path'] for torrent in TORRENTS if torrent['category'] == tag]
+                torrents[torrent['name']] = torrent
+    return torrents
 
 if __name__ == "__main__":
-    get_torrent_dirs()
+    get_torrents()

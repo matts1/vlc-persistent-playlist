@@ -76,13 +76,15 @@ class Episode(database.db.Entity, database.Table):
     upto = Required(int, default=0)
     last_undo_time = None
     intro_start = None
+    _ep_num = None
 
     @classmethod
-    def get_or_create(cls, item, *args, **kwargs):
+    def get_or_create(cls, item, *args, tag=None, **kwargs):
         try:
-            return cls[item]
+            res = cls[item]
         except ObjectNotFound:
-            return cls(fname=item)
+            res = cls(fname=item)
+        return res
 
     @while_playing
     def seek_delta(self, delta):
@@ -127,6 +129,8 @@ class Episode(database.db.Entity, database.Table):
 
     @property
     def inferred_episode(self):
+        if self._ep_num is not None:
+            return self._ep_num
         stages = [self.fname]
         for t in TRANSFORMATIONS:
             stages.append(t(stages[-1]))

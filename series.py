@@ -9,20 +9,30 @@ from pony.orm import Required, PrimaryKey, Optional, ObjectNotFound
 import database
 from episode import Episode
 from interface import status, playlist, maybe_start_process
-from torrent import get_directories
+from torrent import get_torrents
 
 VIDEO_FORMATS = ["mkv", "mp4", "avi"]
 
-def get_episodes(directory):
-    if isinstance(directory, list):
-        episodes = [d for single_dir in directory for d in get_episodes(single_dir).values()]
+
+def get_episodes(torrent):
+    if isinstance(torrent, list):
+        episodes = []
+        for t in torrent:
+            episodes.append(next(iter(get_episodes(t).values())))
+            tag = t['tags']
+            if tag:
+                assert tag.startswith("#")
+                episodes[-1]._ep_num = int(tag[1:])
         episodes.sort(key=lambda x: (x.inferred_episode, x.fname))
         episodes_map = OrderedDict()
         for i, ep in enumerate(episodes):
             expected = episodes[0].inferred_episode + i
-            assert ep.inferred_episode == expected, "Expected %d, got %d for %s" % (expected, ep.inferred_episode, ep.fname)
+            assert ep.inferred_episode == expected, "Expected %d, got %d for %s" % (
+            expected, ep.inferred_episode, ep.fname)
             episodes_map[ep.inferred_episode] = ep
         return episodes_map
+
+    directory = torrent['content_path']
     # Single file
     if os.path.isfile(directory):
         return OrderedDict({1: Episode.get_or_create(directory)})
@@ -52,15 +62,15 @@ class Series(database.db.Entity, database.Table):
     is_tag = Required(bool)
 
     @classmethod
-    def get_or_create(cls, tag, directories):
-        is_tag = isinstance(directories, list)
-        key = tag if is_tag else directories
+    def get_or_create(cls, tag, torrents):
+        is_tag = isinstance(torrents, list)
+        key = tag if is_tag else torrents['content_path']
         try:
             result = cls[key]
             result.last_watched = datetime.now()
             return result
         except ObjectNotFound:
-            episodes = get_episodes(directories)
+            episodes = get_episodes(torrents)
             if episodes:
                 return cls(directory_or_tag=key, last_watched=datetime.fromordinal(1), is_tag=is_tag)
             else:
@@ -86,7 +96,7 @@ class Series(database.db.Entity, database.Table):
     @property
     def episodes(self):
         if not hasattr(self, "_episodes"):
-            self._episodes = get_episodes(get_directories(self.directory_or_tag) if self.is_tag else self.directory_or_tag)
+            self._episodes = get_episodes(get_torrents()[self.directory_or_tag])
             for ep in self._episodes.values():
                 ep.series = self
         return self._episodes

@@ -9,7 +9,7 @@ from pony.orm import db_session, select, desc
 from database import db
 from series import Series
 from speech import get_rewritten_line
-from torrent import get_torrent_dirs
+from torrent import get_torrents
 
 db.generate_mapping(create_tables=True)
 
@@ -35,7 +35,7 @@ def main():
         all_series = sorted(Series.select(), key=lambda s: s.last_watched, reverse=True)
         series = all_series[0]
     elif sys.argv[1] == "--torrent":
-        all_series = [Series.get_or_create(name, directories) for name, directories in reversed(get_torrent_dirs().items())]
+        all_series = [Series.get_or_create(name, torrents) for name, torrents in reversed(get_torrents().items())]
         all_series = [s for s in all_series if s is not None and (s.completed == 0 or s.completed != s.n_episodes)]
 
         for i, s in reversed(list(enumerate(all_series))):
