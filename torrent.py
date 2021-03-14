@@ -38,6 +38,7 @@ def get_torrents():
                 torrents[tag] = torrents.pop(tag, []) + [torrent]
             else:
                 torrents[torrent['name']] = torrent
+    assert 'Shana Project' not in torrents, "Shana project not empty"
     return torrents
 
 if __name__ == "__main__":

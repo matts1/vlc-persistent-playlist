@@ -9,9 +9,9 @@ from pony.orm import Required, PrimaryKey, Optional, ObjectNotFound
 import database
 from episode import Episode
 from interface import status, playlist, maybe_start_process
-from torrent import get_torrents
 
 VIDEO_FORMATS = ["mkv", "mp4", "avi"]
+END_OF_EPISODE_PERCENTAGE = 0.8
 
 
 def get_episodes(torrent):
@@ -65,16 +65,25 @@ class Series(database.db.Entity, database.Table):
     def get_or_create(cls, tag, torrents):
         is_tag = isinstance(torrents, list)
         key = tag if is_tag else torrents['content_path']
+        added_on = max(t['added_on'] for t in torrents) if is_tag else torrents['added_on']
         try:
             result = cls[key]
-            result.last_watched = datetime.now()
+            result.torrents = torrents
+            result.added_on = datetime.fromtimestamp(added_on)
+            if result.last_watched is None:
+                result.last_watched = datetime.fromtimestamp(0)
             return result
         except ObjectNotFound:
-            episodes = get_episodes(torrents)
-            if episodes:
-                return cls(directory_or_tag=key, last_watched=datetime.fromordinal(1), is_tag=is_tag)
+            if get_episodes(torrents):
+                result = cls(directory_or_tag=key, last_watched=datetime.fromordinal(1), is_tag=is_tag)
+                result.torrents = torrents
+                return result
             else:
                 return None
+
+    def __lt__(self, other):
+        key = lambda x: (max(x.last_watched, x.added_on), x.added_on)
+        return key(self) < key(other)
 
     @property
     def current_episode(self):
@@ -96,7 +105,7 @@ class Series(database.db.Entity, database.Table):
     @property
     def episodes(self):
         if not hasattr(self, "_episodes"):
-            self._episodes = get_episodes(get_torrents()[self.directory_or_tag])
+            self._episodes = get_episodes(self.torrents)
             for ep in self._episodes.values():
                 ep.series = self
         return self._episodes
@@ -126,7 +135,11 @@ class Series(database.db.Entity, database.Table):
         print("seeking to time", self.current_episode.upto)
         self.current_episode.seek_absolute(self.current_episode.upto)
         time.sleep(2)  # Ensure that status() has time to populate with the correct data
-        self.current_episode.on_play(status())
+        st = status()
+        self.current_episode.on_play(st)
+        percentage_complete = float(st.find('position').text)
+        if percentage_complete > END_OF_EPISODE_PERCENTAGE:
+            status('pl_next')
 
     def update(self):
         st = status()

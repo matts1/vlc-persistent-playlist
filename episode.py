@@ -1,7 +1,7 @@
 import os
 import re
 
-from pony.orm import PrimaryKey, Required, Optional, ObjectNotFound, Set
+from pony.orm import PrimaryKey, Required, ObjectNotFound
 
 import database
 from interface import status
