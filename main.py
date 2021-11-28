@@ -54,11 +54,11 @@ def main():
 
     series.start()
     threading.Thread(target=series.command_loop, args=(input,)).start()
-    threading.Thread(target=series.command_loop, args=(get_rewritten_line,)).start()
+    # threading.Thread(target=series.command_loop, args=(get_rewritten_line,)).start()
     while True:
         series.update()
         db.commit()
-        time.sleep(2)
+        time.sleep(1)
 
 
 try:

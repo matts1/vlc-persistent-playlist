@@ -18,6 +18,10 @@ ROOT_DIR = "H:\\unwatched"
 CLIENT = get_client()
 TORRENTS = CLIENT.torrents()
 
+def category_match(torrent, category):
+    return category.lower().split(" - ")[0] in torrent['name'].lower().replace("_", " ").replace(".", " ")
+
+
 def get_torrents():
     torrents = OrderedDict()
     initial_torrents = sorted(TORRENTS, key=lambda x: x["added_on"])
@@ -25,15 +29,23 @@ def get_torrents():
     categories = {torrent['category'] for torrent in initial_torrents if torrent['category']}
     for torrent in initial_torrents:
         path = torrent['content_path']
-        if torrent["progress"] > 0:
-            tag = torrent['category']
-            if tag == 'Shana Project' or not tag:
-                for category in categories:
-                    if category.lower().split(" - ")[0] in torrent['name'].lower().replace("_", " ").replace(".", " "):
-                        print("Filing under", category, ":", torrent['name'])
-                        CLIENT.set_category(torrent['hash'], category)
-                        torrent['category'] = tag = category
+        tag = torrent['category']
+        if tag == 'Shana Project' or not tag and "no_category" not in torrent["tags"]:
+            for category in categories:
+                if category_match(torrent, category):
+                    print("Filing under", category, ":", torrent['name'])
+                    CLIENT.set_category(torrent['hash'], category)
+                    torrent['category'] = tag = category
+        if tag == 'Shana Project':
+            while True:
+                torrent['category'] = tag = category = input(f"Enter a category for {torrent['name']}\n")
+                if category_match(torrent, category):
+                    CLIENT.create_category(category)
+                    categories.add(category)
+                    CLIENT.set_category(torrent['hash'], category)
+                    break
 
+        if torrent["progress"] > 0:
             if tag:
                 torrents[tag] = torrents.pop(tag, []) + [torrent]
             else:

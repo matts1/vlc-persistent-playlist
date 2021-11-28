@@ -14,22 +14,24 @@ VIDEO_FORMATS = ["mkv", "mp4", "avi"]
 END_OF_EPISODE_PERCENTAGE = 0.8
 
 
-def get_episodes(torrent):
+def get_episodes(torrent, fill_ep_num=True):
     if isinstance(torrent, list):
         episodes = []
         for t in torrent:
-            episodes.append(next(iter(get_episodes(t).values())))
+            episodes.append(next(iter(get_episodes(t, fill_ep_num=False).values())))
             tag = t['tags']
             if tag:
                 assert tag.startswith("#")
-                episodes[-1]._ep_num = int(tag[1:])
+                episodes[-1]._ep_num = float(tag[1:])
         episodes.sort(key=lambda x: (x.inferred_episode, x.fname))
         episodes_map = OrderedDict()
+        expected = [episodes[0].inferred_episode]
         for i, ep in enumerate(episodes):
-            expected = episodes[0].inferred_episode + i
-            assert ep.inferred_episode == expected, "Expected %d, got %d for %s" % (
+            assert ep.inferred_episode in expected, "Expected %s, got %d for %s" % (
             expected, ep.inferred_episode, ep.fname)
+            expected = [ep.inferred_episode + 0.5, ep.inferred_episode + 1]
             episodes_map[ep.inferred_episode] = ep
+            # Account for ep17.5, etc. Assume it's 18.
         return episodes_map
 
     directory = torrent['content_path']
@@ -46,20 +48,29 @@ def get_episodes(torrent):
                     ".") in VIDEO_FORMATS:
                 episodes.append(Episode.get_or_create(path))
     episodes_map = OrderedDict()
-    for i, ep in enumerate(sorted(episodes, key=lambda episode: episode.fname)):
+    for i, ep in enumerate(sorted(episodes, key=lambda episode: (os.path.dirname(episode.fname), episode.stripped_fnames[-1]))):
         episodes_map[i + 1] = ep
+        if fill_ep_num:
+            ep._ep_num = i + 1
     return episodes_map
 
 
 class Series(database.db.Entity, database.Table):
     directory_or_tag = PrimaryKey(str)
-    upto = Optional(int)
+    upto = Optional(float)
     last_watched = Required(datetime)
 
     override_subs = Optional(int)
     override_audio = Optional(int)
     intro_duration = Optional(int)
+    autoskip_duration = Optional(int)
+    autoskip_chapters = Optional(int)
+    autonext_time = Optional(int)
     is_tag = Required(bool)
+
+    @property
+    def episodes_by_index(self):
+        return list(self.episodes.values())
 
     @classmethod
     def get_or_create(cls, tag, torrents):
@@ -69,27 +80,32 @@ class Series(database.db.Entity, database.Table):
         try:
             result = cls[key]
             result.torrents = torrents
-            result.added_on = datetime.fromtimestamp(added_on)
             if result.last_watched is None:
                 result.last_watched = datetime.fromtimestamp(0)
-            return result
         except ObjectNotFound:
             if get_episodes(torrents):
                 result = cls(directory_or_tag=key, last_watched=datetime.fromordinal(1), is_tag=is_tag)
                 result.torrents = torrents
-                return result
             else:
                 return None
+        result.added_on = datetime.fromtimestamp(added_on)
+        return result
 
     def __lt__(self, other):
         key = lambda x: (max(x.last_watched, x.added_on), x.added_on)
         return key(self) < key(other)
 
     @property
-    def current_episode(self):
-        if self.upto is None:
-            return self.episodes[next(iter(self.episodes))]
+    def current_episode(self) -> Episode:
+        if self.upto is None or self.upto not in self.episodes:
+            return self.episodes_by_index[0]
         return self.episodes[self.upto]
+
+    def episode_before(self, ep: Episode) -> float:
+        idx = self.episodes_by_index.index(ep)
+        if idx == 0:
+            return 0
+        return self.episodes_by_index[idx - 1].inferred_episode
 
     @property
     def n_episodes(self):
@@ -98,9 +114,11 @@ class Series(database.db.Entity, database.Table):
     @property
     def completed(self):
         if self.upto is None:
-            return self.current_episode.inferred_episode - 1 if self.is_tag else 0
+            return int(self.current_episode.inferred_episode) - 1 if self.is_tag else 0
 
-        return self.upto - (0 if self.current_episode.upto > 5 * 60 else 1)
+        if self.current_episode.upto > 5 * 60:
+            return self.current_episode.inferred_episode
+        return self.episode_before(self.current_episode)
 
     @property
     def episodes(self):
@@ -116,8 +134,8 @@ class Series(database.db.Entity, database.Table):
 
     def start(self):
         self.last_watched = datetime.now()
-        maybe_start_process("C:\Program Files (x86)\VMR Connect\VMRHub.exe")
-        time.sleep(1)
+        # maybe_start_process("C:\Program Files (x86)\VMR Connect\VMRHub.exe")
+        # time.sleep(1)
         maybe_start_process(r"C:\Program Files\VideoLAN\VLC\vlc.exe")
 
         # Load the playlist
@@ -137,22 +155,31 @@ class Series(database.db.Entity, database.Table):
         time.sleep(2)  # Ensure that status() has time to populate with the correct data
         st = status()
         self.current_episode.on_play(st)
+        print(f"Up to {st.find('position').text}/1, {st.find('time').text} seconds")
         percentage_complete = float(st.find('position').text)
         if percentage_complete > END_OF_EPISODE_PERCENTAGE:
             status('pl_next')
 
     def update(self):
         st = status()
-        ep = playlist()[1]
-        assert ep is not None
+        current_time = int(st.find('time').text)
+        episodes, ep = playlist()
+        if ep is None:
+            ep = sorted(episodes)[-1]
         current_episode = Episode[ep]
+        if self.autonext_time is not None and current_time > self.autonext_time:
+            status('pl_next')
         if self.upto is None or current_episode != self.current_episode:
             for k, v in self.episodes.items():
                 if v == current_episode:
+                    if self.autoskip_duration is not None:
+                        current_episode.seek_absolute(self.autoskip_duration)
+                    for i in range(self.autoskip_chapters or 0):
+                        ep.seek_command(status, 'key', val='chapter-next')
                     self.upto = k
                     print(f"Switched episode to Ep{self.upto} ({self.current_episode.fname})")
                     self.current_episode.on_play(st)
-        current_episode.upto = int(st.find('time').text)
+        current_episode.upto = current_time
 
     def run_command(self, line):
         if line is None:
@@ -198,6 +225,18 @@ class Series(database.db.Entity, database.Table):
         if line == "delete subtitles override" or line == "delete subtitle override":
             self.override_subs = None
             return ep.on_play(status())
+
+        chapter_skip_match = re.match("autoskip chapter( [0-9]+)?", line)
+        if chapter_skip_match is not None:
+            self.autoskip_chapters = 1 if chapter_skip_match.group(1) == "" else int(chapter_skip_match)
+            return
+
+        if line == "autoskip":
+            self.autoskip_duration = self.current_episode.current_time()
+            return
+        if line == "autonext":
+            self.autonext_time = self.current_episode.current_time()
+            return
 
         def test_intro():
             ep.seek_absolute(ep.intro_start - 3)
